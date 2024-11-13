@@ -10,7 +10,7 @@ services:
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=123123
-      - POSTGRES_DB=smart_host
+      - POSTGRES_DB=postgres
     restart: always
 
 volumes:
