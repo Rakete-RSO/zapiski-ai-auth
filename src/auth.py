@@ -1,25 +1,27 @@
-import bcrypt
-import jwt
+import os
 from datetime import datetime, timedelta
 from typing import Optional
+
+import bcrypt
+import jwt
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     to_encode = data.copy()
     to_encode.update({"exp": expire})
-    
+
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -32,7 +34,7 @@ def verify_access_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         # Check if the token has expired
-        if payload['exp'] < datetime.utcnow().timestamp():
+        if payload["exp"] < datetime.utcnow().timestamp():
             return None
         return payload  # Return the decoded token payload (usually contains user info)
     except jwt.PyJWTError:
@@ -43,7 +45,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verify if the provided password matches the stored hashed password.
     """
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+    )
 
 
 def hash_password(password: str) -> str:
@@ -52,9 +56,10 @@ def hash_password(password: str) -> str:
     """
     # Generate salt
     salt = bcrypt.gensalt()
-    
+
     # Hash the password with the generated salt
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-    
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt)
+
     # Return the hashed password as a string
-    return hashed_password.decode('utf-8')
+    return hashed_password.decode("utf-8")
+

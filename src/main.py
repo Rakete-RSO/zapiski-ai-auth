@@ -1,13 +1,26 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Header
+import re
+from contextlib import asynccontextmanager
+from operator import or_
+
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-# from models import User
-from .auth import create_access_token, verify_password, hash_password, verify_access_token
-from .schemas import UserLogin
-import re
-from .database import create_tables, get_db
 
-app = FastAPI()
+# from models import User
+from .auth import (create_access_token, hash_password, verify_access_token,
+                   verify_password)
+from .database import create_tables, get_db
+from .schemas import UserLogin
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Startup code
+    create_tables()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -20,9 +33,12 @@ def verify_token(token: str = Depends(oauth2_scheme)):
     """
     payload = verify_access_token(token)
     if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
+
     return {"msg": "Token is valid", "token_info": payload}
+
 
 def validate_password(password: str) -> bool:
     """
@@ -43,11 +59,15 @@ def validate_password(password: str) -> bool:
 @app.post("/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
     # Check if username or email exists
-    db_user = db.query(UserLogin).filter(
-        (UserLogin.username == user.username) | (UserLogin.email == user.username)
-    ).first()
+    db_user = (
+        db.query(UserLogin)
+        .filter(
+            or_(UserLogin.username == user.username, UserLogin.email == user.username)
+        )
+        .first()
+    )
 
-    if not db_user or not verify_password(user.password, db_user.hashed_password):
+    if not db_user or not verify_password(user.password, db_user.password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     # Generate the JWT token
@@ -59,9 +79,13 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 @app.post("/register")
 def register(user: UserLogin, db: Session = Depends(get_db)):
     # Check if username or email exists
-    db_user = db.query(UserLogin).filter(
-        (UserLogin.username == user.username) | (UserLogin.email == user.username)
-    ).first()
+    db_user = (
+        db.query(UserLogin)
+        .filter(
+            or_(UserLogin.username == user.username, UserLogin.email == user.username)
+        )
+        .first()
+    )
 
     if db_user:
         raise HTTPException(status_code=409, detail="Username already exists!")
@@ -69,25 +93,22 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     # Validate email format
     if not re.match(r"[^@]+@[^@]+\.[^@]+", user.username):
         raise HTTPException(status_code=400, detail="Invalid email format")
-    
+
     if not validate_password(user.password):
         raise HTTPException(
             status_code=400,
             detail="Password must be at least 8 characters long, and include uppercase, lowercase, number, and special character",
         )
-    
+
     # Hash the password before saving
     hashed_password = hash_password(user.password)
 
     # Create the new user
-    new_user = UserLogin(username=user.username, email=user.username, hashed_password=hashed_password)
+    new_user = UserLogin(
+        username=user.username, email=user.username, password=hashed_password
+    )
 
     # Add to the database
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
-
-@app.on_event("startup")
-def startup_event():
-    create_tables()
