@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .auth import (create_access_token, hash_password, verify_access_token,
                    verify_password)
 from .database import create_tables, get_db
+from .models import User
 from .schemas import UserLogin
 
 
@@ -60,14 +61,12 @@ def validate_password(password: str) -> bool:
 def login(user: UserLogin, db: Session = Depends(get_db)):
     # Check if username or email exists
     db_user = (
-        db.query(UserLogin)
-        .filter(
-            or_(UserLogin.username == user.username, UserLogin.email == user.username)
-        )
+        db.query(User)  # Use User (the SQLAlchemy model), not UserLogin
+        .filter(or_(User.username == user.username, User.email == user.username))
         .first()
     )
 
-    if not db_user or not verify_password(user.password, db_user.password):
+    if not db_user or not verify_password(user.password, db_user.password):  # type: ignore
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     # Generate the JWT token
@@ -80,10 +79,8 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 def register(user: UserLogin, db: Session = Depends(get_db)):
     # Check if username or email exists
     db_user = (
-        db.query(UserLogin)
-        .filter(
-            or_(UserLogin.username == user.username, UserLogin.email == user.username)
-        )
+        db.query(User)
+        .filter(or_(User.username == user.username, User.email == user.username))
         .first()
     )
 
@@ -91,7 +88,7 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Username already exists!")
 
     # Validate email format
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", user.username):
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", user.email):
         raise HTTPException(status_code=400, detail="Invalid email format")
 
     if not validate_password(user.password):
@@ -104,7 +101,7 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     hashed_password = hash_password(user.password)
 
     # Create the new user
-    new_user = UserLogin(
+    new_user = User(
         username=user.username, email=user.username, password=hashed_password
     )
 
@@ -112,3 +109,4 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    return {"msg": "User created successfully"}
