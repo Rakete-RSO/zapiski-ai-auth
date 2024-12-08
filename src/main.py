@@ -61,8 +61,8 @@ def validate_password(password: str) -> bool:
 def login(user: UserLogin, db: Session = Depends(get_db)):
     # Check if username or email exists
     db_user = (
-        db.query(User)  # Use User (the SQLAlchemy model), not UserLogin
-        .filter(or_(User.username == user.username, User.email == user.username))
+        db.query(User)
+        .filter(or_(User.username == user.username, User.email == user.email))
         .first()
     )
 
@@ -74,13 +74,12 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
     return {"access_token": access_token, "token_type": "bearer"}
 
-
 @app.post("/register")
 def register(user: UserLogin, db: Session = Depends(get_db)):
     # Check if username or email exists
     db_user = (
         db.query(User)
-        .filter(or_(User.username == user.username, User.email == user.username))
+        .filter(or_(User.username == user.username, User.email == user.email))
         .first()
     )
 
@@ -102,7 +101,7 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
 
     # Create the new user
     new_user = User(
-        username=user.username, email=user.username, password=hashed_password
+        username=user.username, email=user.email, password=hashed_password
     )
 
     # Add to the database
