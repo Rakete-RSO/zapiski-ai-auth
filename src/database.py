@@ -5,11 +5,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-load_dotenv()  # Load environment variables from .env file
+from src.config import DATABASE_URL
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL is None:
-    raise Exception("DATABASE_URL environment variable is not set")
+load_dotenv()  # Load environment variables from .env file
 
 engine = create_engine(
     DATABASE_URL, echo=True
@@ -43,4 +41,3 @@ def get_db():
         yield db  # Return the session to be used in route handlers
     finally:
         db.close()  # Ensure the session is closed after use
-

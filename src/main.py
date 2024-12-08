@@ -6,6 +6,8 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from src.config import DEVELOPMENT_MODE
+
 # from models import User
 from .auth import (create_access_token, hash_password, verify_access_token,
                    verify_password)
@@ -74,6 +76,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
     return {"access_token": access_token, "token_type": "bearer"}
 
+
 @app.post("/register")
 def register(user: UserLogin, db: Session = Depends(get_db)):
     # Check if username or email exists
@@ -90,7 +93,7 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     if not re.match(r"[^@]+@[^@]+\.[^@]+", user.email):
         raise HTTPException(status_code=400, detail="Invalid email format")
 
-    if not validate_password(user.password):
+    if not validate_password(user.password) and not DEVELOPMENT_MODE:
         raise HTTPException(
             status_code=400,
             detail="Password must be at least 8 characters long, and include uppercase, lowercase, number, and special character",
@@ -100,9 +103,7 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     hashed_password = hash_password(user.password)
 
     # Create the new user
-    new_user = User(
-        username=user.username, email=user.email, password=hashed_password
-    )
+    new_user = User(username=user.username, email=user.email, password=hashed_password)
 
     # Add to the database
     db.add(new_user)
