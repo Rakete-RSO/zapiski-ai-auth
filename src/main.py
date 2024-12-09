@@ -1,6 +1,10 @@
 import re
 from contextlib import asynccontextmanager
 from operator import or_
+from datetime import datetime, timezone
+
+import requests
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -9,10 +13,14 @@ from sqlalchemy.orm import Session
 from src.config import DEVELOPMENT_MODE
 
 # from models import User
-from .auth import (create_access_token, hash_password, verify_access_token,
-                   verify_password)
+from .auth import (
+    create_access_token,
+    hash_password,
+    verify_access_token,
+    verify_password,
+)
 from .database import create_tables, get_db
-from .models import User
+from .models import User, SubscriptionTier
 from .schemas import UserLogin
 
 
@@ -21,6 +29,11 @@ async def lifespan(_: FastAPI):
     # Startup code
     create_tables()
     yield
+    scheduler.start()  # Start the scheduler
+    try:
+        yield  # Run the app
+    finally:
+        scheduler.shutdown()  # Shutdown: Stop the scheduler
 
 
 app = FastAPI(lifespan=lifespan)
@@ -103,10 +116,57 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     hashed_password = hash_password(user.password)
 
     # Create the new user
-    new_user = User(username=user.username, email=user.email, password=hashed_password)
+    new_user = User(
+        username=user.username,
+        email=user.email,
+        password=hashed_password,
+        subscription_tier=SubscriptionTier.Basic,
+    )
 
     # Add to the database
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     return {"msg": "User created successfully"}
+
+
+# Monthly billing service
+scheduler = BackgroundScheduler()
+
+
+def monthly_task():
+    """
+    Task to check user subscription dates and trigger GET requests.
+    """
+    with next(get_db()) as db:
+        users = db.query(User).all()
+        today = datetime.now(timezone.utc).date()
+
+        for user in users:
+            if user.subscribed_date and user.subscribed_date.day == today.day:
+                response = requests.get("https://jsonplaceholder.typicode.com/posts/1")
+                print(
+                    f"Sent request for {user.username}, Status: {response.status_code}"
+                )
+
+
+# Add the monthly job to the scheduler
+scheduler.add_job(
+    monthly_task, "cron", day="*", hour=0, minute=0
+)  # Executes daily at midnight UTC
+
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Start the scheduler when the application starts.
+    """
+    scheduler.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Shut down the scheduler gracefully when the application shuts down.
+    """
+    scheduler.shutdown()
