@@ -3,22 +3,20 @@ from typing import Optional
 
 import bcrypt
 import jwt
-from dotenv import load_dotenv
+from sqlalchemy import UUID
 
 from src.config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY
 
-load_dotenv()
 
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(
+    user_id: UUID, username: str, expires_delta: Optional[timedelta] = None
+):
     if expires_delta:
         expire = datetime.now() + expires_delta
     else:
         expire = datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    to_encode = data.copy()
-    to_encode.update({"exp": expire})
-
+    to_encode = {"sub": str(user_id), "username": username, "exp": expire}
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 

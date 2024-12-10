@@ -1,6 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum
-from sqlalchemy.sql import func
 import enum
+import uuid
+
+from sqlalchemy import DateTime, Enum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.sql import func
 
 from .database import Base
 
@@ -11,12 +15,25 @@ class SubscriptionTier(enum.Enum):
     Premium = "Premium"
 
 
+class Base(DeclarativeBase):
+    pass
+
+
 class User(Base):
     __tablename__ = "users"
+    __allow_unmapped__ = True
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
-    password = Column(String)
-    subscribed_date = Column(DateTime, default=func.now())
-    subscription_tier = Column(Enum(SubscriptionTier), default=SubscriptionTier.Basic)
+    id: Mapped = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        unique=True,
+        index=True,
+    )
+    username: Mapped[str] = mapped_column(unique=True, index=True)
+    email: Mapped[str] = mapped_column(unique=True, index=True)
+    password: Mapped[str] = mapped_column()
+    subscription_tier: Mapped[str] = mapped_column(
+        Enum(SubscriptionTier), default=SubscriptionTier.Basic
+    )
+    subscribed_date: Mapped[DateTime] = mapped_column(DateTime, default=func.now())

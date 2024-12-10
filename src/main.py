@@ -81,11 +81,13 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
         .first()
     )
 
-    if not db_user or not verify_password(user.password, db_user.password):  # type: ignore
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+    if not db_user:
+        raise HTTPException(status_code=401, detail="Invalid username")
+    if not verify_password(user.password, db_user.password):  # type: ignore
+        raise HTTPException(status_code=401, detail="Invalid password")
 
     # Generate the JWT token
-    access_token = create_access_token(data={"sub": db_user.username})
+    access_token = create_access_token(user_id=db_user.id, username=db_user.username)
 
     return {"access_token": access_token, "token_type": "bearer"}
 
