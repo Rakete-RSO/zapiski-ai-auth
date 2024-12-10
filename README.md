@@ -20,5 +20,5 @@ Are located in `zapiski-ai-dev-env` Postman collection.
 
 ## Additional comments
 
-Tjaz: By default, I was running this on port 8000. If you're running multiple API servers (e.g., this and auth) at the same time
+Tjaz: By default, I was running this on port 8001. If you're running multiple API servers (e.g., this and auth) at the same time
 during local development, they have to be exposed over different ports. I just use various random defaults here.
