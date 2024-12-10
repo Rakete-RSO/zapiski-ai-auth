@@ -12,7 +12,7 @@ In this case, postgresql is deployed through docker-compose, and poetry packages
 - To setup python packages and start the server (prerequisite: `poetry`):
   - `poetry install`
   - `cp .example.env .env`
-  - `poetry run uvicorn src.main:app --reload`
+  - `poetry run uvicorn src.main:app --reload --port 8001`
 
 ## Provided requests
 

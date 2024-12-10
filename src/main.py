@@ -1,11 +1,10 @@
 import re
 from contextlib import asynccontextmanager
-from operator import or_
 from datetime import datetime, timezone
+from operator import or_
 
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -13,14 +12,10 @@ from sqlalchemy.orm import Session
 from src.config import DEVELOPMENT_MODE
 
 # from models import User
-from .auth import (
-    create_access_token,
-    hash_password,
-    verify_access_token,
-    verify_password,
-)
+from .auth import (create_access_token, hash_password, verify_access_token,
+                   verify_password)
 from .database import create_tables, get_db
-from .models import User, SubscriptionTier
+from .models import SubscriptionTier, User
 from .schemas import UserLogin
 
 
@@ -145,7 +140,7 @@ def monthly_task():
         today = datetime.now(timezone.utc).date()
 
         for user in users:
-            if user.subscribed_date and user.subscribed_date.day == today.day:
+            if user.subscribed_date and user.subscribed_date == today.day:
                 response = requests.get("https://jsonplaceholder.typicode.com/posts/1")
                 print(
                     f"Sent request for {user.username}, Status: {response.status_code}"
