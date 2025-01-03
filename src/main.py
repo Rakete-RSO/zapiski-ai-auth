@@ -12,8 +12,12 @@ from sqlalchemy.orm import Session
 from src.config import DEVELOPMENT_MODE
 
 # from models import User
-from .auth import (create_access_token, hash_password, verify_access_token,
-                   verify_password)
+from .auth import (
+    create_access_token,
+    hash_password,
+    verify_access_token,
+    verify_password,
+)
 from .database import create_tables, get_db
 from .models import SubscriptionTier, User
 from .schemas import UserLogin
