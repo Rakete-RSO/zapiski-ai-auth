@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -15,7 +15,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the requirements file into the container
 COPY pyproject.toml poetry.lock /app/
-RUN pip install poetry && poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir poetry
+RUN poetry config virtualenvs.create false
+RUN poetry install --no-interaction --no-ansi --no-root
 
 # Copy the entire application into the container
 COPY . /app/
