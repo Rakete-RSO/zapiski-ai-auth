@@ -19,6 +19,7 @@ python-dotenv = "^1.0.1"
 fastapi = "^0.115.5"
 pyjwt = "^2.9.0"
 apscheduler = "^3.11.0"
+strawberry-graphql = "^0.258.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.10.0"

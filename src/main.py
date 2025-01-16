@@ -1,5 +1,7 @@
 import re
 from contextlib import asynccontextmanager
+from strawberry.fastapi import GraphQLRouter
+from .graphql_schema import schema
 from datetime import datetime, timezone
 from operator import or_
 
@@ -19,7 +21,7 @@ from .auth import (
     verify_password,
 )
 from .database import create_tables, get_db
-from .models import SubscriptionTier, User
+from .models import SubscriptionTier, User, UpdateSubscription
 from .schemas import UserLogin
 
 
@@ -38,7 +40,48 @@ async def lifespan(_: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": next(get_db())})
+app.include_router(graphql_app, prefix="/graphql")
 
+
+
+@app.post("/update-subscription")
+def update_subscription(
+        update_request: UpdateSubscription,
+        token: str = Depends(oauth2_scheme),
+        db: Session = Depends(get_db),
+):
+    """
+    Update the subscription tier of the logged-in user.
+    """
+    # Verify the token and get the user payload
+    payload = verify_access_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
+
+    # Get the logged-in user
+    user = db.query(User).filter(User.username == payload["username"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Validate the new subscription tier
+    if update_request.subscription_tier not in SubscriptionTier:
+        raise HTTPException(
+            status_code=400, detail="Invalid subscription tier"
+        )
+
+    # Update the user's subscription tier
+    user.subscription_tier = update_request.subscription_tier
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "msg": f"Subscription tier updated to {user.subscription_tier.value}",
+        "user_id": str(user.id),
+        "subscription_tier": user.subscription_tier.value,
+    }
 
 @app.get("/verify-token")
 def verify_token(token: str = Depends(oauth2_scheme)):

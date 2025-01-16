@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
-
+from pydantic import BaseModel
 from .database import Base
 
 
@@ -14,6 +14,8 @@ class SubscriptionTier(enum.Enum):
     Pro = "Pro"
     Premium = "Premium"
 
+class UpdateSubscription(BaseModel):
+    subscription_tier: SubscriptionTier
 
 class User(Base):
     __tablename__ = "users"
