@@ -1,7 +1,5 @@
 import re
 from contextlib import asynccontextmanager
-from strawberry.fastapi import GraphQLRouter
-from .graphql_schema import schema
 from datetime import datetime, timezone
 from operator import or_
 
@@ -10,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from strawberry.fastapi import GraphQLRouter
 
 from src.config import DEVELOPMENT_MODE
 
@@ -21,7 +20,8 @@ from .auth import (
     verify_password,
 )
 from .database import create_tables, get_db
-from .models import SubscriptionTier, User, UpdateSubscription
+from .graphql_schema import schema
+from .models import SubscriptionTier, UpdateSubscription, User
 from .schemas import UserLogin
 
 
@@ -44,12 +44,11 @@ graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": next(get_db())
 app.include_router(graphql_app, prefix="/graphql")
 
 
-
 @app.post("/update-subscription")
 def update_subscription(
-        update_request: UpdateSubscription,
-        token: str = Depends(oauth2_scheme),
-        db: Session = Depends(get_db),
+    update_request: UpdateSubscription,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
 ):
     """
     Update the subscription tier of the logged-in user.
@@ -68,9 +67,7 @@ def update_subscription(
 
     # Validate the new subscription tier
     if update_request.subscription_tier not in SubscriptionTier:
-        raise HTTPException(
-            status_code=400, detail="Invalid subscription tier"
-        )
+        raise HTTPException(status_code=400, detail="Invalid subscription tier")
 
     # Update the user's subscription tier
     user.subscription_tier = update_request.subscription_tier
@@ -82,6 +79,7 @@ def update_subscription(
         "user_id": str(user.id),
         "subscription_tier": user.subscription_tier.value,
     }
+
 
 @app.get("/verify-token")
 def verify_token(token: str = Depends(oauth2_scheme)):
@@ -172,6 +170,12 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     return {"msg": "User created successfully"}
+
+
+@app.get("/health-check")
+def health_check():
+    # return status 200
+    return {"status": "ok"}
 
 
 # Monthly billing service
