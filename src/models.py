@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import DateTime, Enum
+from sqlalchemy import DateTime, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -14,8 +14,10 @@ class SubscriptionTier(enum.Enum):
     Pro = "Pro"
     Premium = "Premium"
 
+
 class UpdateSubscription(BaseModel):
     subscription_tier: SubscriptionTier
+
 
 class User(Base):
     __tablename__ = "users"
@@ -35,3 +37,22 @@ class User(Base):
         Enum(SubscriptionTier), default=SubscriptionTier.Basic
     )
     subscribed_date: Mapped[DateTime] = mapped_column(DateTime, default=func.now())
+
+
+class Billing(Base):
+    __tablename__ = "billings"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        unique=True,
+        index=True,
+    )
+    customer_email: Mapped[str] = mapped_column(ForeignKey("users.email"))
+    amount: Mapped[float] = mapped_column()
+    currency: Mapped[str] = mapped_column()
+    payment_intent_id: Mapped[str] = mapped_column()
+    client_secret: Mapped[str] = mapped_column()
+    status: Mapped[str] = mapped_column()
+    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.now())

@@ -23,6 +23,12 @@ RUN poetry install --no-interaction --no-ansi --no-root
 # Copy the entire application into the container
 COPY . /app/
 
+ENV SECRET_KEY="raketa_vzletela_s_skreta"
+ENV ALGORITHM="HS256"
+ENV ACCESS_TOKEN_EXPIRE_MINUTES="300"
+ENV DATABASE_URL="postgresql://admin:123123@postgres:5432/postgres"
+ENV DEVELOPMENT_MODE="True"
+
 # Expose the port on which the FastAPI app runs
 EXPOSE 8000
 

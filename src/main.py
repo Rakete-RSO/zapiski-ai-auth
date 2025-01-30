@@ -2,7 +2,9 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from operator import or_
+from typing import List
 
+from pydantic import BaseModel
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -10,6 +12,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from strawberry.fastapi import GraphQLRouter
 
+from src.billing_listener import BillingListener
 from src.config import DEVELOPMENT_MODE
 
 # from models import User
@@ -21,20 +24,23 @@ from .auth import (
 )
 from .database import create_tables, get_db
 from .graphql_schema import schema
-from .models import SubscriptionTier, UpdateSubscription, User
+from .models import Billing, SubscriptionTier, UpdateSubscription, User
 from .schemas import UserLogin
+
+billing_listener = BillingListener()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Startup code
     create_tables()
-    yield
+    billing_listener.start()
     scheduler.start()  # Start the scheduler
     try:
         yield  # Run the app
     finally:
         scheduler.shutdown()  # Shutdown: Stop the scheduler
+        billing_listener.stop()  # Stop the billing listener
 
 
 app = FastAPI(lifespan=lifespan)
@@ -170,6 +176,48 @@ def register(user: UserLogin, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     return {"msg": "User created successfully"}
+
+
+class BillingResponse(BaseModel):
+    id: str
+    customer_email: str
+    amount: float
+    currency: str
+    payment_intent_id: str
+    status: str
+
+
+@app.get("/billings", response_model=List[BillingResponse])
+def get_billings(db: Session = Depends(get_db)):
+    """
+    Get all billing records for the authenticated user
+    """
+    # Verify the token and get the user payload
+    # payload = verify_access_token(token)
+    # if not payload:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+    #     )
+
+    # Get the logged-in user
+    user = db.query(User).filter(User.username == "Vanja").first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Query billings for the user's email
+    billings = db.query(Billing).filter(Billing.customer_email == user.email).all()
+
+    return [
+        {
+            "id": str(b.id),
+            "customer_email": b.customer_email,
+            "amount": b.amount,
+            "currency": b.currency,
+            "payment_intent_id": b.payment_intent_id,
+            "status": b.status,
+        }
+        for b in billings
+    ]
 
 
 @app.get("/health-check")
