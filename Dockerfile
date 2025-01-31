@@ -31,6 +31,7 @@ ENV DEVELOPMENT_MODE="True"
 
 # Expose the port on which the FastAPI app runs
 EXPOSE 8000
+EXPOSE 50051
 
 # Command to run the application
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

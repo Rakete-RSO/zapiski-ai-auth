@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from strawberry.fastapi import GraphQLRouter
+import pybreaker
 
 from src.billing_listener import BillingListener
 from src.config import DEVELOPMENT_MODE
@@ -26,6 +27,11 @@ from .database import create_tables, get_db
 from .graphql_schema import schema
 from .models import Billing, SubscriptionTier, UpdateSubscription, User
 from .schemas import UserLogin
+
+circuit_breaker = pybreaker.CircuitBreaker(
+    fail_max=3,  # Max failures before opening the circuit
+    reset_timeout=10,  # Wait time before trying again (in seconds)
+)
 
 billing_listener = BillingListener()
 
@@ -59,32 +65,38 @@ def update_subscription(
     """
     Update the subscription tier of the logged-in user.
     """
-    # Verify the token and get the user payload
-    payload = verify_access_token(token)
-    if not payload:
+    try:
+        # Verify the token and get the user payload
+        payload = verify_access_token(token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
+
+        # Get the logged-in user
+        user = db.query(User).filter(User.username == payload["username"]).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Validate the new subscription tier
+        if update_request.subscription_tier not in SubscriptionTier:
+            raise HTTPException(status_code=400, detail="Invalid subscription tier")
+
+        # Update the user's subscription tier
+        user.subscription_tier = update_request.subscription_tier
+        db.commit()
+        db.refresh(user)
+
+        return {
+            "msg": f"Subscription tier updated to {user.subscription_tier.value}",
+            "user_id": str(user.id),
+            "subscription_tier": user.subscription_tier.value,
+        }
+    except pybreaker.CircuitBreakerError:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+            status_code=503, detail="Service unavailable (Circuit Open)"
         )
-
-    # Get the logged-in user
-    user = db.query(User).filter(User.username == payload["username"]).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Validate the new subscription tier
-    if update_request.subscription_tier not in SubscriptionTier:
-        raise HTTPException(status_code=400, detail="Invalid subscription tier")
-
-    # Update the user's subscription tier
-    user.subscription_tier = update_request.subscription_tier
-    db.commit()
-    db.refresh(user)
-
-    return {
-        "msg": f"Subscription tier updated to {user.subscription_tier.value}",
-        "user_id": str(user.id),
-        "subscription_tier": user.subscription_tier.value,
-    }
 
 
 @app.get("/verify-token")
@@ -120,62 +132,75 @@ def validate_password(password: str) -> bool:
 
 @app.post("/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
-    # Check if username or email exists
-    db_user = (
-        db.query(User)
-        .filter(or_(User.username == user.username, User.email == user.email))
-        .first()
-    )
+    try:
+        # Check if username or email exists
+        db_user = (
+            db.query(User)
+            .filter(or_(User.username == user.username, User.email == user.email))
+            .first()
+        )
 
-    if not db_user:
-        raise HTTPException(status_code=401, detail="Invalid username")
-    if not verify_password(user.password, db_user.password):  # type: ignore
-        raise HTTPException(status_code=401, detail="Invalid password")
+        if not db_user:
+            raise HTTPException(status_code=401, detail="Invalid username")
+        if not verify_password(user.password, db_user.password):  # type: ignore
+            raise HTTPException(status_code=401, detail="Invalid password")
 
-    # Generate the JWT token
-    access_token = create_access_token(user_id=db_user.id, username=db_user.username)
+        # Generate the JWT token
+        access_token = create_access_token(
+            user_id=db_user.id, username=db_user.username
+        )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+        return {"access_token": access_token, "token_type": "bearer"}
+    except pybreaker.CircuitBreakerError:
+        raise HTTPException(
+            status_code=503, detail="Service unavailable (Circuit Open)"
+        )
 
 
 @app.post("/register")
 def register(user: UserLogin, db: Session = Depends(get_db)):
-    # Check if username or email exists
-    db_user = (
-        db.query(User)
-        .filter(or_(User.username == user.username, User.email == user.email))
-        .first()
-    )
-
-    if db_user:
-        raise HTTPException(status_code=409, detail="Username already exists!")
-
-    # Validate email format
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", user.email):
-        raise HTTPException(status_code=400, detail="Invalid email format")
-
-    if not validate_password(user.password) and not DEVELOPMENT_MODE:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 8 characters long, and include uppercase, lowercase, number, and special character",
+    try:
+        # Check if username or email exists
+        db_user = (
+            db.query(User)
+            .filter(or_(User.username == user.username, User.email == user.email))
+            .first()
         )
 
-    # Hash the password before saving
-    hashed_password = hash_password(user.password)
+        if db_user:
+            raise HTTPException(status_code=409, detail="Username already exists!")
 
-    # Create the new user
-    new_user = User(
-        username=user.username,
-        email=user.email,
-        password=hashed_password,
-        subscription_tier=SubscriptionTier.Basic,
-    )
+        # Validate email format
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", user.email):
+            raise HTTPException(status_code=400, detail="Invalid email format")
 
-    # Add to the database
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return {"msg": "User created successfully"}
+        if not validate_password(user.password) and not DEVELOPMENT_MODE:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must be at least 8 characters long, and include uppercase, lowercase, number, and special character",
+            )
+
+        # Hash the password before saving
+        hashed_password = hash_password(user.password)
+
+        # Create the new user
+        new_user = User(
+            username=user.username,
+            email=user.email,
+            password=hashed_password,
+            subscription_tier=SubscriptionTier.Basic,
+        )
+
+        # Add to the database
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return {"msg": "User created successfully"}
+
+    except pybreaker.CircuitBreakerError:
+        raise HTTPException(
+            status_code=503, detail="Service unavailable (Circuit Open)"
+        )
 
 
 class BillingResponse(BaseModel):
@@ -185,45 +210,57 @@ class BillingResponse(BaseModel):
     currency: str
     payment_intent_id: str
     status: str
+    created_at: datetime
 
 
 @app.get("/billings", response_model=List[BillingResponse])
-def get_billings(db: Session = Depends(get_db)):
+def get_billings(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     """
     Get all billing records for the authenticated user
     """
-    # Verify the token and get the user payload
-    # payload = verify_access_token(token)
-    # if not payload:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
-    #     )
+    try:
+        # Verify the token and get the user payload
+        payload = verify_access_token(token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
 
-    # Get the logged-in user
-    user = db.query(User).filter(User.username == "Vanja").first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        # Get the logged-in user
+        user = db.query(User).filter(User.username == "Vanja").first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    # Query billings for the user's email
-    billings = db.query(Billing).filter(Billing.customer_email == user.email).all()
+        # Query billings for the user's email
+        billings = db.query(Billing).filter(Billing.customer_email == user.email).all()
 
-    return [
-        {
-            "id": str(b.id),
-            "customer_email": b.customer_email,
-            "amount": b.amount,
-            "currency": b.currency,
-            "payment_intent_id": b.payment_intent_id,
-            "status": b.status,
-        }
-        for b in billings
-    ]
+        return [
+            {
+                "id": str(b.id),
+                "customer_email": b.customer_email,
+                "amount": b.amount,
+                "currency": b.currency,
+                "payment_intent_id": b.payment_intent_id,
+                "status": b.status,
+                "created_at": b.created_at,
+            }
+            for b in billings
+        ]
+    except pybreaker.CircuitBreakerError:
+        raise HTTPException(
+            status_code=503, detail="Service unavailable (Circuit Open)"
+        )
 
 
 @app.get("/health-check")
 def health_check():
+    global grpc_server
     # return status 200
-    return {"status": "ok"}
+    return {
+        "status": "healthy",
+        "grpc_server": "running" if grpc_server else "not running",
+    }
 
 
 # Monthly billing service
@@ -251,6 +288,49 @@ scheduler.add_job(
     monthly_task, "cron", day="*", hour=0, minute=0
 )  # Executes daily at midnight UTC
 
+grpc_server = None
+
+import grpc
+from concurrent import futures
+from sqlalchemy.orm import Session
+from typing import Optional
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+from src import user_verification_pb2
+from src import user_verification_pb2_grpc
+
+from .database import get_db
+from .models import User
+
+
+class UserVerificationService(user_verification_pb2_grpc.UserVerificationServicer):
+    def VerifyUser(self, request, context):
+        # Get database session
+        db: Session = next(get_db())
+        try:
+            # Check if user exists
+            user: Optional[User] = (
+                db.query(User).filter(User.username == request.username).first()
+            )
+            return user_verification_pb2.UserExistsResponse(exists=user is not None)
+        finally:
+            db.close()
+
+
+def serve_grpc():
+    logger.debug("gRPC Server starting...")
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    user_verification_pb2_grpc.add_UserVerificationServicer_to_server(
+        UserVerificationService(), server
+    )
+    server.add_insecure_port("0.0.0.0:50051")
+    server.start()
+    print("gRPC Server: ", server)
+    return server
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -258,6 +338,8 @@ async def startup_event():
     Start the scheduler when the application starts.
     """
     scheduler.start()
+    global grpc_server
+    grpc_server = serve_grpc()
 
 
 @app.on_event("shutdown")
@@ -266,3 +348,6 @@ async def shutdown_event():
     Shut down the scheduler gracefully when the application shuts down.
     """
     scheduler.shutdown()
+    global grpc_server
+    if grpc_server:
+        grpc_server.stop(0)

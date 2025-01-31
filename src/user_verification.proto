@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package userverification;
+
+service UserVerification {
+    rpc VerifyUser (UserRequest) returns (UserExistsResponse) {}
+}
+
+message UserRequest {
+    string username = 1;
+}
+
+message UserExistsResponse {
+    bool exists = 1;
+}

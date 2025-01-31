@@ -41,6 +41,7 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: user
       RABBITMQ_PASS: password
+      AUTH_SERVICE_HOST: auth
     restart: always
     depends_on:
       - rabbitmq
